@@ -1,0 +1,7 @@
+[package]
+name = "Tui"
+version = "0.1.0"
+
+[dependencies]
+Anstyle = { git = "https://github.com/mcdearman/MeadowAnstyle", version = "0.2.0" }
+UnicodeWidth = { git = "https://github.com/mcdearman/MeadowUnicodeWidth", version = "0.2.0" }

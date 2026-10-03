@@ -1,0 +1,374 @@
+-- tui: drawing in a terminal, a cell at a time.
+--
+--   use Tui
+--   use Anstyle (style, bold)
+--
+--   let b = blank 40 6 in
+--   let b = border b (rect 0 0 40 6) style "found" in
+--   let b = list b (inside (rect 0 0 40 6)) [("length", style), ("lines", style)] 0 (bold style) in
+--   below b      -- what to write to show it under the line the cursor is on
+--
+-- A **buffer** is a grid of cells, each a character and how it is styled.
+-- Everything that draws takes a buffer and answers one: text at a place, a
+-- border, a paragraph wrapped into a rectangle, a list with one item
+-- chosen. Nothing here reads a key or writes to a terminal; what is drawn is
+-- turned into the text that shows it -- all of it (`shown`, `below`), or
+-- what changed since the buffer before (`changed`) -- and whoever has the
+-- terminal writes that. So a thing drawn is a value, and a test reads it
+-- (`plain`).
+--
+-- A **rectangle** is where: a column and a row from the top left, which is
+-- (0, 0), and a width and a height. `inside` is what a border leaves;
+-- `columns` and `rows` divide one among sizes -- so many cells, so many
+-- hundredths, or a share of what is left.
+--
+-- A character is as wide as a terminal shows it (`UnicodeWidth`): one cell,
+-- or two -- and none for a mark that goes on the character before it. What
+-- would fall outside the buffer, or the rectangle it is drawn in, is not
+-- drawn. Styles are `Anstyle`'s.
+
+use Std.Collections.Vector as V
+use Std.String as S
+use Std.Char as C
+use Std.Maybe.Maybe.*
+use Std.Maybe as M
+use Anstyle (Style)
+use Anstyle as A
+use UnicodeWidth as W
+
+-- --- where -------------------------------------------------------------------
+
+@derive(Debug, PartialEq)
+@pub record Rect = { x : Int, y : Int, w : Int, h : Int }
+
+@pub fun rect (x : Int) (y : Int) (w : Int) (h : Int) : Rect = Rect { x = x, y = y, w = max 0 w, h = max 0 h }
+
+-- What a border around `r` leaves: `r`, a cell in on every side.
+@pub fun inside (r : Rect) : Rect = rect (r.x + 1) (r.y + 1) (r.w - 2) (r.h - 2)
+
+-- How much of a rectangle a part of it takes: so many cells, so many
+-- hundredths of it, or an equal share of what the others leave.
+@pub data Size = Cells Int | Percent Int | Share
+
+use Size.*
+
+-- `r` divided left to right, a part a size.
+@pub fun columns (r : Rect) (sizes : [Size]) : [Rect] =
+  let ws = lengths r.w sizes in
+  fst (V.foldl (\acc w -> match acc with | (out, x) -> (V.pushBack out (rect x r.y w r.h), x + w)) ([], r.x) ws)
+
+-- `r` divided top to bottom.
+@pub fun rows (r : Rect) (sizes : [Size]) : [Rect] =
+  let hs = lengths r.h sizes in
+  fst (V.foldl (\acc h -> match acc with | (out, y) -> (V.pushBack out (rect r.x y r.w h), y + h)) ([], r.y) hs)
+
+-- `total` among `sizes`: the fixed ones first, as far as it goes, and what
+-- is left shared out, the first shares a cell more when it does not divide.
+fun lengths (total : Int) (sizes : [Size]) : [Int] =
+  let fixed = V.map (\s -> match s with | Cells n -> max 0 n | Percent p -> max 0 (total * p / 100) | Share -> 0 - 1) sizes in
+  let capped = fst (V.foldl (\acc n -> match acc with | (out, left) -> if n < 0 then (V.pushBack out n, left) else (let got = min n left in (V.pushBack out got, left - got))) ([], total) fixed) in
+  let left = total - V.foldl (\acc n -> if n < 0 then acc else acc + n) 0 capped in
+  let shares = V.len (V.filter (\n -> n < 0) capped) in
+  if shares == 0 then capped
+  else
+    let each = left / shares in
+    let extra = left - each * shares in
+    fst (V.foldl (\acc n -> match acc with | (out, k) -> if n < 0 then (V.pushBack out (each + (if k < extra then 1 else 0)), k + 1) else (V.pushBack out n, k)) ([], 0) capped)
+
+-- --- a buffer ----------------------------------------------------------------
+
+-- A cell: what is in it -- nothing, for the second cell of a character two
+-- wide -- and the sequence that turns its style on.
+data Cell = Cell String String
+
+-- A grid of cells: how wide, how tall, and its rows.
+@pub data Buffer = Buffer Int Int [[Cell]]
+
+def empty : Cell = Cell " " ""
+
+-- A buffer of spaces.
+@pub fun blank (w : Int) (h : Int) : Buffer = Buffer (max 0 w) (max 0 h) (V.map (\y -> V.map (\x -> empty) (V.range 0 (max 0 w))) (V.range 0 (max 0 h)))
+
+@pub fun width (b : Buffer) : Int = match b with | Buffer w _ _ -> w
+
+@pub fun height (b : Buffer) : Int = match b with | Buffer _ h _ -> h
+
+-- The whole of a buffer, as a rectangle.
+@pub fun area (b : Buffer) : Rect = rect 0 0 (width b) (height b)
+
+fun rowsOf (b : Buffer) : [[Cell]] = match b with | Buffer _ _ rs -> rs
+
+-- `text` on row `y` from column `x`, in `style`: as much of it as is in the
+-- buffer, and none of what a line's end in it would start.
+@pub fun write (b : Buffer) (x : Int) (y : Int) (style : Style) (text : String) : Buffer = writeWithin b (area b) x y style text
+
+-- The same, and nothing outside `r`.
+@pub fun writeIn (b : Buffer) (r : Rect) (x : Int) (y : Int) (style : Style) (text : String) : Buffer = writeWithin b (clipped b r) (r.x + x) (r.y + y) style text
+
+-- A line of pieces, each its own style, one after another.
+@pub fun writeSpans (b : Buffer) (r : Rect) (x : Int) (y : Int) (spans : [(String, Style)]) : Buffer =
+  fst (V.foldl (\acc sp -> match acc with | (buf, at) -> (writeIn buf r at y (snd sp) (fst sp), at + W.width (fst sp))) (b, x) spans)
+
+-- `r`, less what of it is outside `b`.
+fun clipped (b : Buffer) (r : Rect) : Rect =
+  let x0 = max 0 r.x in
+  let y0 = max 0 r.y in
+  rect x0 y0 (min (width b) (r.x + r.w) - x0) (min (height b) (r.y + r.h) - y0)
+
+fun writeWithin (b : Buffer) (r : Rect) (x : Int) (y : Int) (style : Style) (text : String) : Buffer =
+  if y < r.y or y >= r.y + r.h or r.w <= 0 then b
+  else
+    match V.get (rowsOf b) y with
+    | None -> b
+    | Just row ->
+        let on = A.render style in
+        let cs = V.takeWhile (\c -> C.code c != 10) (S.chars text) in
+        let placed =
+          V.foldl
+            (\acc c ->
+              match acc with
+              | (cells, at) ->
+                  let w = W.charWidth c in
+                  let w1 = M.unwrapOr 1 w in
+                  if w1 == 0 then (joined cells (at - 1) r c, at)
+                  else if at < r.x or at + w1 > r.x + r.w then (cells, at + w1)
+                  else
+                    let first = V.set cells at (Cell (C.toString c) on) in
+                    (if w1 == 2 then V.set first (at + 1) (Cell "" on) else first, at + w1))
+            (row, x)
+            cs in
+          Buffer (width b) (height b) (V.set (rowsOf b) y (fst placed))
+
+-- A mark that goes on the character before it, put with it.
+fun joined (cells : [Cell]) (at : Int) (r : Rect) (c : Char) : [Cell] =
+  if at < r.x or at >= r.x + r.w then cells
+  else
+    match V.get cells at with
+    | Just (Cell t on) -> if S.isEmpty t then cells else V.set cells at (Cell (t ++ C.toString c) on)
+    | None -> cells
+
+-- Every cell of `r` set to `ch` in `style`.
+@pub fun fill (b : Buffer) (r : Rect) (style : Style) (ch : String) : Buffer =
+  let c = clipped b r in
+  V.foldl (\buf y -> writeWithin buf c c.x y style (S.repeat ch c.w)) b (V.range c.y (c.y + c.h))
+
+-- A border around `r`, its corners round, and `title` in its top edge.
+@pub fun border (b : Buffer) (r : Rect) (style : Style) (title : String) : Buffer =
+  if r.w < 2 or r.h < 2 then b
+  else
+    let across = S.repeat "─" (r.w - 2) in
+    let top = writeIn b r 0 0 style ("╭" ++ across ++ "╮") in
+    let bottom = writeIn top r 0 (r.h - 1) style ("╰" ++ across ++ "╯") in
+    let sides = V.foldl (\buf y -> writeIn (writeIn buf r 0 y style "│") r (r.w - 1) y style "│") bottom (V.range 1 (r.h - 1)) in
+    if S.isEmpty title or r.w < 6 then sides
+    else writeIn sides (rect (r.x + 2) r.y (r.w - 4) 1) 0 0 style (" " ++ title ++ " ")
+
+-- `text` in `r`, a line of it a row, each too long for `r` broken between
+-- words -- and inside a word longer than a row.
+@pub fun paragraph (b : Buffer) (r : Rect) (style : Style) (text : String) : Buffer =
+  let lines = V.concatMap (\l -> wrapped r.w l) (S.split "\n" text) in
+  V.foldl (\buf i -> writeIn buf r 0 i style (V.getOr "" lines i)) b (V.range 0 (min r.h (V.len lines)))
+
+-- A line as rows no wider than `w`.
+@pub fun wrapped (w : Int) (line : String) : [String] =
+  if w <= 0 then []
+  else
+    let words = V.filter (\x -> not (S.isEmpty x)) (S.split " " line) in
+    let step = \acc word ->
+      match acc with
+      | (out, cur) ->
+          let fits = if S.isEmpty cur then W.width word <= w else W.width cur + 1 + W.width word <= w in
+          if fits then (out, if S.isEmpty cur then word else cur ++ " " ++ word)
+          else
+            let out2 = if S.isEmpty cur then out else V.pushBack out cur in
+            let pieces = chopped w word in
+            (V.append out2 (V.take pieces (V.len pieces - 1)), V.getOr "" pieces (V.len pieces - 1)) in
+      match V.foldl step ([], "") words with
+      | (out, cur) -> if S.isEmpty cur and not (V.isEmpty out) then out else V.pushBack out cur
+
+-- A word as pieces no wider than `w`.
+fun chopped (w : Int) (word : String) : [String] =
+  let step = \acc c ->
+    match acc with
+    | (out, cur, at) ->
+        let cw = M.unwrapOr 1 (W.charWidth c) in
+        if at + cw > w and not (S.isEmpty cur) then (V.pushBack out cur, C.toString c, cw) else (out, cur ++ C.toString c, at + cw) in
+    match V.foldl step ([], "", 0) (S.chars word) with
+    | (out, cur, _) -> V.pushBack out cur
+
+-- `items` in `r`, a row each, the one chosen in `chosen`'s style across the
+-- whole row: as many as fit, scrolled so that the chosen one is among them.
+@pub fun list (b : Buffer) (r : Rect) (items : [(String, Style)]) (selected : Int) (chosen : Style) : Buffer =
+  let first = firstShown r.h (V.len items) selected in
+  V.foldl
+    (\buf i ->
+      match V.get items (first + i) with
+      | None -> buf
+      | Just (text, style) ->
+          if first + i == selected then writeIn (fill buf (rect r.x (r.y + i) r.w 1) chosen " ") r 0 i chosen text
+          else writeIn buf r 0 i style text)
+    b
+    (V.range 0 r.h)
+
+-- The first of `count` items to show in `rows` rows so that `selected` is
+-- one of them: it is kept in the middle until the list's end is in sight.
+@pub fun firstShown (rows : Int) (count : Int) (selected : Int) : Int =
+  if count <= rows or rows <= 0 then 0
+  else max 0 (min (count - rows) (selected - rows / 2))
+
+-- --- what shows it -----------------------------------------------------------
+
+-- A buffer's rows as text alone: what a test compares.
+@pub fun plain (b : Buffer) : [String] =
+  V.map (\row -> S.join "" (V.map (\c -> match c with | Cell t _ -> t) row)) (rowsOf b)
+
+-- A row as the text that shows it: each run of cells of one style, the style
+-- turned on before it and off after.
+fun rowShown (row : [Cell]) (from : Int) (to : Int) : String =
+  let step = \acc i ->
+    match (acc, V.get row i) with
+    | ((out, on), Just (Cell t style)) ->
+        if S.isEmpty t then (out, on)
+        else if style == on then (out ++ t, on)
+        else (out ++ (if S.isEmpty on then "" else A.reset) ++ style ++ t, style)
+    | (same, None) -> same in
+    match V.foldl step ("", "") (V.range from to) with
+    | (out, on) -> out ++ (if S.isEmpty on then "" else A.reset)
+
+-- Each row as the text that shows it.
+@pub fun lines (b : Buffer) : [String] = V.map (\row -> rowShown row 0 (V.len row)) (rowsOf b)
+
+-- The whole buffer from where the cursor is, its rows one under another:
+-- for a screen that is the buffer's.
+@pub fun shown (b : Buffer) : String = S.join "\r\n" (lines b)
+
+-- The buffer in the lines below the one the cursor is on, and the cursor
+-- back where it was -- room made for it first, so that at the foot of the
+-- screen the lines above move up rather than the buffer being cut off. The
+-- cursor comes back to its line, at its first column: whoever drew that
+-- line puts it where it belongs.
+@pub fun below (b : Buffer) : String =
+  let h = height b in
+  if h == 0 then ""
+  else S.repeat "\n" h ++ up h ++ "\r" ++ S.join "" (V.map (\l -> "\n\r" ++ clearLine ++ l) (lines b)) ++ up h ++ "\r"
+
+-- The lines below the cursor's, cleared.
+@pub def eraseBelow : String = "\u{1b}7\n\r\u{1b}[J\u{1b}8"
+
+-- What turns the screen showing `old` at column `x`, row `y`, into one
+-- showing `new`: each run of cells that differs, written where it is. Rows
+-- and columns count from 0. A buffer of another size is written whole.
+@pub fun changed (x : Int) (y : Int) (old : Buffer) (new : Buffer) : String =
+  if width old != width new or height old != height new then
+    S.join "" (V.map (\i -> moveTo x (y + i) ++ V.getOr "" (lines new) i) (V.range 0 (height new)))
+  else
+    S.join ""
+      (V.map
+        (\i ->
+          let a = V.getOr [] (rowsOf old) i in
+          let c = V.getOr [] (rowsOf new) i in
+          let differs = \j -> not (sameCell (V.get a j) (V.get c j)) in
+          let cols = V.filter differs (V.range 0 (V.len c)) in
+          match (V.get cols 0, V.last cols) with
+          -- A character two cells wide is written from its first.
+          | (Just from, Just to) -> (let start = wideStart c from in moveTo (x + start) (y + i) ++ rowShown c start (to + 1))
+          | _ -> "")
+        (V.range 0 (height new)))
+
+fun sameCell (a : Maybe Cell) (b : Maybe Cell) : Bool =
+  match (a, b) with
+  | (Just (Cell t s), Just (Cell u v)) -> t == u and s == v
+  | (None, None) -> True
+  | _ -> False
+
+fun wideStart (row : [Cell]) (j : Int) : Int =
+  match V.get row j with
+  | Just (Cell t _) -> if S.isEmpty t and j > 0 then wideStart row (j - 1) else j
+  | None -> j
+
+-- --- the terminal's own words ------------------------------------------------
+
+-- The cursor to column `x` of row `y`, from 0.
+@pub fun moveTo (x : Int) (y : Int) : String = "\u{1b}[${show (y + 1)};${show (x + 1)}H"
+
+@pub fun up (n : Int) : String = if n <= 0 then "" else "\u{1b}[${show n}A"
+
+@pub fun down (n : Int) : String = if n <= 0 then "" else "\u{1b}[${show n}B"
+
+@pub fun right (n : Int) : String = if n <= 0 then "" else "\u{1b}[${show n}C"
+
+@pub fun left (n : Int) : String = if n <= 0 then "" else "\u{1b}[${show n}D"
+
+-- The cursor to column `x` of the line it is on.
+@pub fun toColumn (x : Int) : String = "\u{1b}[${show (x + 1)}G"
+
+-- From the cursor to the end of its line, cleared; and to the end of the screen.
+@pub def clearLine : String = "\u{1b}[K"
+
+@pub def clearDown : String = "\u{1b}[J"
+
+@pub def clearScreen : String = "\u{1b}[2J\u{1b}[H"
+
+@pub def hideCursor : String = "\u{1b}[?25l"
+
+@pub def showCursor : String = "\u{1b}[?25h"
+
+-- A screen of the program's own, and the one that was there back.
+@pub def enterScreen : String = "\u{1b}[?1049h"
+
+@pub def leaveScreen : String = "\u{1b}[?1049l"
+
+-- --- tests -------------------------------------------------------------------
+
+use Std.Test (assertEq)
+use Anstyle (style, bold)
+
+@test fun textIsWrittenWhereItIsPutAndNoFurther () =
+  let b = write (write (blank 6 2) 1 0 style "abc") 4 1 style "xyz" in
+  let a = assertEq (plain b) [" abc  ", "    xy"] "the second cut at the edge" in
+  assertEq (plain (write (blank 3 1) 0 5 style "no")) ["   "] "and a row that is not there is not written"
+
+@test fun aRectangleKeepsWhatIsDrawnInIt () =
+  let b = writeIn (blank 8 2) (rect 2 0 3 1) 0 0 style "abcdef" in
+  let a = assertEq (plain b) ["  abc   ", "        "] "three cells of it" in
+  assertEq (plain (writeIn (blank 4 1) (rect 2 0 9 1) 0 0 style "abcdef")) ["  ab"] "and no more than the buffer has"
+
+@test fun aWideCharacterTakesTwoCellsOrNone () =
+  let a = assertEq (plain (write (blank 5 1) 0 0 style "a\u{4e2d}b")) ["a\u{4e2d}b "] "two cells, and what follows after them" in
+  let b = assertEq (plain (write (blank 2 1) 1 0 style "\u{4e2d}")) ["  "] "not half of one" in
+  assertEq (plain (write (blank 3 1) 0 0 style "e\u{301}x")) ["e\u{301}x "] "a mark goes on the letter before it"
+
+@test fun aBorderGoesRoundAndIsTitled () =
+  assertEq
+    (plain (border (blank 12 3) (rect 0 0 12 3) style "hi"))
+    ["╭─ hi ─────╮", "│          │", "╰──────────╯"]
+    "corners, edges, and the title in the top"
+
+@test fun aRectangleIsDividedAmongSizes () =
+  let a = assertEq (V.map (\(r : Rect) -> (r.x, r.w)) (columns (rect 0 0 20 1) [Cells 5, Share, Percent 25])) [(0, 5), (5, 10), (15, 5)] "five, a quarter, and the rest" in
+  let b = assertEq (V.map (\(r : Rect) -> (r.y, r.h)) (rows (rect 0 2 4 7) [Share, Share])) [(2, 4), (6, 3)] "shares, the first a row more" in
+  assertEq (V.map (\(r : Rect) -> r.w) (columns (rect 0 0 4 1) [Cells 3, Cells 3])) [3, 1] "and no more than there is"
+
+@test fun aParagraphBreaksBetweenWords () =
+  let a = assertEq (wrapped 10 "the quick brown fox") ["the quick", "brown fox"] "as many words as fit" in
+  let b = assertEq (wrapped 4 "abcdefghij k") ["abcd", "efgh", "ij k"] "a word too long is cut" in
+  assertEq (plain (paragraph (blank 6 2) (rect 0 0 6 2) style "one two three four")) ["one   ", "two   "] "and what does not fit is not drawn"
+
+@test fun aListShowsTheChosenItem () =
+  let items = V.map (\i -> ("item ${show i}", style)) (V.range 0 10) in
+  let a = assertEq (plain (list (blank 8 3) (rect 0 0 8 3) items 0 (bold style))) ["item 0  ", "item 1  ", "item 2  "] "from the top" in
+  let b = assertEq (plain (list (blank 8 3) (rect 0 0 8 3) items 5 (bold style))) ["item 4  ", "item 5  ", "item 6  "] "the chosen one in the middle" in
+  assertEq (plain (list (blank 8 3) (rect 0 0 8 3) items 9 (bold style))) ["item 7  ", "item 8  ", "item 9  "] "and the end in sight"
+
+@test fun aStyleIsTurnedOnForItsRunAndOffAfter () =
+  let b = write (write (blank 5 1) 0 0 style "ab") 2 0 (bold style) "cd" in
+  assertEq (lines b) ["ab\u{1b}[1mcd\u{1b}[0m "] "plain, bold, and plain again"
+
+@test fun onlyWhatChangedIsWrittenAgain () =
+  let old = write (blank 6 2) 0 0 style "hello" in
+  let new = write (write (blank 6 2) 0 0 style "help") 0 1 style "x" in
+  let a = assertEq (changed 2 3 old new) "\u{1b}[4;6Hp \u{1b}[5;3Hx" "from the first cell that differs to the last, on each row" in
+  assertEq (changed 0 0 old old) "" "and nothing for nothing"
+
+@test fun aBufferIsShownBelowTheCursorsLine () =
+  assertEq (below (write (blank 2 2) 0 0 style "ab")) "\n\n\u{1b}[2A\r\n\r\u{1b}[Kab\n\r\u{1b}[K  \u{1b}[2A\r" "room made, each row written, and back up"
