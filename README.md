@@ -1,4 +1,4 @@
-# tui
+# Doodle
 
 Drawing in a terminal, a cell at a time, for
 [Meadow](https://github.com/mcdearman/meadow).
@@ -10,7 +10,7 @@ only when there is a terminal to write that to. Nothing here reads a key or
 writes to a terminal.
 
 ```meadow
-use Tui
+use Doodle
 use Anstyle (style, bold)
 
 fun picker (names : [String]) (chosen : Int) : Buffer =
@@ -42,5 +42,9 @@ are [Anstyle](https://github.com/mcdearman/MeadowAnstyle)'s.
 ## Install
 
 ```sh
-meadow add mcdearman/MeadowTui
+meadow add mcdearman/Doodle
 ```
+
+## Licence
+
+BSD 3-Clause: see [LICENSE](LICENSE).

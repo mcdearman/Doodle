@@ -1,6 +1,6 @@
--- tui: drawing in a terminal, a cell at a time.
+-- Doodle: drawing in a terminal, a cell at a time.
 --
---   use Tui
+--   use Doodle
 --   use Anstyle (style, bold)
 --
 --   let b = blank 40 6 in

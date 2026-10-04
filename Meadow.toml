@@ -1,5 +1,5 @@
 [package]
-name = "Tui"
+name = "Doodle"
 version = "0.1.0"
 
 [dependencies]
