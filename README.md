@@ -11,7 +11,6 @@ writes to a terminal.
 
 ```meadow
 use Doodle
-use Anstyle (style, bold)
 
 fun picker (names : [String]) (chosen : Int) : Buffer =
   let b = blank 40 8 in
@@ -37,7 +36,9 @@ writeOutput (below (picker ["length", "lines", "last"] 1))
 A character is as wide as a terminal shows it: one cell, two, or none for a
 mark that goes on the character before. Widths are
 [UnicodeWidth](https://github.com/mcdearman/MeadowUnicodeWidth)'s and styles
-are [Anstyle](https://github.com/mcdearman/MeadowAnstyle)'s.
+are [Anstyle](https://github.com/mcdearman/MeadowAnstyle)'s; the ones a caller
+starts from -- `style`, `bold`, `dimmed`, `withFg`, the colours -- are handed
+on from here, so drawing needs only this package.
 
 ## Install
 

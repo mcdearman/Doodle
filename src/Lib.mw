@@ -1,7 +1,6 @@
 -- Doodle: drawing in a terminal, a cell at a time.
 --
 --   use Doodle
---   use Anstyle (style, bold)
 --
 --   let b = blank 40 6 in
 --   let b = border b (rect 0 0 40 6) style "found" in
@@ -25,7 +24,8 @@
 -- A character is as wide as a terminal shows it (`UnicodeWidth`): one cell,
 -- or two -- and none for a mark that goes on the character before it. What
 -- would fall outside the buffer, or the rectangle it is drawn in, is not
--- drawn. Styles are `Anstyle`'s.
+-- drawn. Styles are `Anstyle`'s, and the ones a caller starts from are handed
+-- on from here: `style`, `bold`, `dimmed`, `withFg`, the colours.
 
 use Std.Collections.Vector as V
 use Std.String as S
@@ -34,6 +34,11 @@ use Std.Maybe.Maybe.*
 use Std.Maybe as M
 use Anstyle (Style)
 use Anstyle as A
+
+-- What a caller styles with, so that drawing needs only this package: the
+-- plain style, what changes it, and the colours.
+@pub use Anstyle (Style, style, bold, dimmed, italic, underlined, invert, withFg, withBg, on, onDefault)
+@pub use Anstyle.Color (Color, AnsiColor)
 use UnicodeWidth as W
 
 -- --- where -------------------------------------------------------------------
@@ -321,7 +326,6 @@ fun wideStart (row : [Cell]) (j : Int) : Int =
 -- --- tests -------------------------------------------------------------------
 
 use Std.Test (assertEq)
-use Anstyle (style, bold)
 
 @test fun textIsWrittenWhereItIsPutAndNoFurther () =
   let b = write (write (blank 6 2) 1 0 style "abc") 4 1 style "xyz" in
