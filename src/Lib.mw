@@ -38,17 +38,7 @@ use Anstyle as A
 -- What a caller styles with, so that drawing needs only this package: the
 -- plain style, what changes it, and the colours.
 @pub use Anstyle (
-  Style,
-  style,
-  bold,
-  dimmed,
-  italic,
-  underlined,
-  invert,
-  withFg,
-  withBg,
-  on,
-  onDefault
+  Style, style, bold, dimmed, italic, underlined, invert, withFg, withBg, on, onDefault
 )
 @pub use Anstyle.Color (Color, AnsiColor)
 use UnicodeWidth as W
@@ -56,14 +46,15 @@ use UnicodeWidth as W
 -- --- where -------------------------------------------------------------------
 
 @derive(Debug, PartialEq)
-@pub record Rect = { x : Int, y : Int, w : Int, h : Int }
-
-@pub fun rect (x : Int) (y : Int) (w : Int) (h : Int) : Rect = Rect {
-  x = x,
-  y = y,
-  w = max 0 w,
-  h = max 0 h
+@pub record Rect = {
+  x : Int,
+  y : Int,
+  w : Int,
+  h : Int
 }
+
+@pub fun rect (x : Int) (y : Int) (w : Int) (h : Int) : Rect =
+  Rect { x = x, y = y, w = max 0 w, h = max 0 h }
 
 -- What a border around `r` leaves: `r`, a cell in on every side.
 @pub fun inside (r : Rect) : Rect = rect (r.x + 1) (r.y + 1) (r.w - 2) (r.h - 2)
@@ -79,40 +70,45 @@ use Size.*
   let ws = lengths r.w sizes in
   fst
     (V.foldl
-      (\acc w -> match acc with | (out, x) -> (V.pushBack out (rect x r.y w r.h), x + w))
-      ([], r.x)
-      ws)
+       (\acc w ->
+         match acc with
+         | (out, x) -> (V.pushBack out (rect x r.y w r.h), x + w))
+       ([], r.x)
+       ws)
 
 -- `r` divided top to bottom.
 @pub fun rows (r : Rect) (sizes : [Size]) : [Rect] =
   let hs = lengths r.h sizes in
   fst
     (V.foldl
-      (\acc h -> match acc with | (out, y) -> (V.pushBack out (rect r.x y r.w h), y + h))
-      ([], r.y)
-      hs)
+       (\acc h ->
+         match acc with
+         | (out, y) -> (V.pushBack out (rect r.x y r.w h), y + h))
+       ([], r.y)
+       hs)
 
 -- `total` among `sizes`: the fixed ones first, as far as it goes, and what
 -- is left shared out, the first shares a cell more when it does not divide.
 fun lengths (total : Int) (sizes : [Size]) : [Int] =
   let fixed =
     V.map
-      (\s -> match s with
-             | Cells n -> max 0 n
-             | Percent p -> max 0 (total * p / 100)
-             | Share -> 0 - 1)
-             sizes
+      (\s ->
+        match s with
+        | Cells n -> max 0 n
+        | Percent p -> max 0 (total * p / 100)
+        | Share -> 0 - 1)
+      sizes
   in
   let capped =
     fst
       (V.foldl
-        (\acc n -> match acc with
-                   | (out, left) ->
-                       if n < 0
-                       then (V.pushBack out n, left)
-                       else (let got = min n left in (V.pushBack out got, left - got)))
-                   ([], total)
-                   fixed)
+         (\acc n ->
+           match acc with
+           | (out, left) ->
+               if n < 0 then (V.pushBack out n, left)
+               else (let got = min n left in (V.pushBack out got, left - got)))
+         ([], total)
+         fixed)
   in
   let left = total - V.foldl (\acc n -> if n < 0 then acc else acc + n) 0 capped in
   let shares = V.len (V.filter (\n -> n < 0) capped) in
@@ -122,13 +118,13 @@ fun lengths (total : Int) (sizes : [Size]) : [Int] =
     let extra = left - each * shares in
     fst
       (V.foldl
-        (\acc n -> match acc with
-                   | (out, k) ->
-                       if n < 0
-                       then (V.pushBack out (each + (if k < extra then 1 else 0)), k + 1)
-                       else (V.pushBack out n, k))
-                   ([], 0)
-                   capped)
+         (\acc n ->
+           match acc with
+           | (out, k) ->
+               if n < 0 then (V.pushBack out (each + (if k < extra then 1 else 0)), k + 1)
+               else (V.pushBack out n, k))
+         ([], 0)
+         capped)
 
 -- --- a buffer ----------------------------------------------------------------
 
@@ -172,10 +168,11 @@ fun rowsOf (b : Buffer) : [[Cell]] = match b with | Buffer _ _ rs -> rs
     : Buffer =
   fst
     (V.foldl
-      (\acc sp -> match acc with
-                  | (buf, at) -> (writeIn buf r at y (snd sp) (fst sp), at + W.width (fst sp)))
-                  (b, x)
-                  spans)
+       (\acc sp ->
+         match acc with
+         | (buf, at) -> (writeIn buf r at y (snd sp) (fst sp), at + W.width (fst sp)))
+       (b, x)
+       spans)
 
 -- `r`, less what of it is outside `b`.
 fun clipped (b : Buffer) (r : Rect) : Rect =
@@ -205,8 +202,8 @@ fun writeWithin (b : Buffer) (r : Rect) (x : Int) (y : Int) (style : Style) (tex
                     let first = V.set cells at (Cell (C.toString c) on) in
                     (if w1 == 2 then V.set first (at + 1) (Cell "" on) else first, at + w1))
             (row, x)
-            cs in
-        Buffer (width b) (height b) (V.set (rowsOf b) y (fst placed))
+            cs
+        in Buffer (width b) (height b) (V.set (rowsOf b) y (fst placed))
 
 -- A mark that goes on the character before it, put with it.
 fun joined (cells : [Cell]) (at : Int) (r : Rect) (c : Char) : [Cell] =
@@ -251,33 +248,34 @@ fun joined (cells : [Cell]) (at : Int) (r : Rect) (c : Char) : [Cell] =
   if w <= 0 then []
   else
     let words = V.filter (\x -> not (S.isEmpty x)) (S.split " " line) in
-    let step = \acc word ->
-      match acc with
-      | (out, cur) ->
-          let fits =
-            if S.isEmpty cur then W.width word <= w else W.width cur + 1 + W.width word <= w
-          in if fits then (out, if S.isEmpty cur then word else cur ++ " " ++ word)
-             else
-               let out2 = if S.isEmpty cur then out else V.pushBack out cur in
-               let pieces = chopped w word in
-               (
-                 V.append out2 (V.take pieces (V.len pieces - 1)),
-                 V.getOr "" pieces (V.len pieces - 1)
-               ) in
-    match V.foldl step ([], "") words with
-    | (out, cur) -> if S.isEmpty cur and not (V.isEmpty out) then out else V.pushBack out cur
+    let step =
+      \acc word ->
+        match acc with
+        | (out, cur) ->
+            let fits =
+              if S.isEmpty cur then W.width word <= w else W.width cur + 1 + W.width word <= w
+            in if fits then (out, if S.isEmpty cur then word else cur ++ " " ++ word)
+               else
+                 let out2 = if S.isEmpty cur then out else V.pushBack out cur in
+                 let pieces = chopped w word in
+                 (
+                   V.append out2 (V.take pieces (V.len pieces - 1)),
+                   V.getOr "" pieces (V.len pieces - 1)
+                 )
+    in match V.foldl step ([], "") words with
+       | (out, cur) -> if S.isEmpty cur and not (V.isEmpty out) then out else V.pushBack out cur
 
 -- A word as pieces no wider than `w`.
 fun chopped (w : Int) (word : String) : [String] =
-  let step = \acc c ->
-    match acc with
-    | (out, cur, at) ->
-        let cw = M.unwrapOr 1 (W.charWidth c) in
-        if at + cw > w and not (S.isEmpty cur)
-        then (V.pushBack out cur, C.toString c, cw)
-        else (out, cur ++ C.toString c, at + cw) in
-  match V.foldl step ([], "", 0) (S.chars word) with
-  | (out, cur, _) -> V.pushBack out cur
+  let step =
+    \acc c ->
+      match acc with
+      | (out, cur, at) ->
+          let cw = M.unwrapOr 1 (W.charWidth c) in
+          if at + cw > w and not (S.isEmpty cur) then (V.pushBack out cur, C.toString c, cw)
+          else (out, cur ++ C.toString c, at + cw)
+  in match V.foldl step ([], "", 0) (S.chars word) with
+     | (out, cur, _) -> V.pushBack out cur
 
 -- `items` in `r`, a row each, the one chosen in `chosen`'s style across the
 -- whole row: as many as fit, scrolled so that the chosen one is among them.
@@ -289,8 +287,8 @@ fun chopped (w : Int) (word : String) : [String] =
       match V.get items (first + i) with
       | None -> buf
       | Just (text, style) ->
-          if first + i == selected
-          then writeIn (fill buf (rect r.x (r.y + i) r.w 1) chosen " ") r 0 i chosen text
+          if first + i == selected then
+            writeIn (fill buf (rect r.x (r.y + i) r.w 1) chosen " ") r 0 i chosen text
           else writeIn buf r 0 i style text)
     b
     (V.range 0 r.h)
@@ -309,15 +307,16 @@ fun chopped (w : Int) (word : String) : [String] =
 -- A row as the text that shows it: each run of cells of one style, the style
 -- turned on before it and off after.
 fun rowShown (row : [Cell]) (from : Int) (to : Int) : String =
-  let step = \acc i ->
-    match (acc, V.get row i) with
-    | ((out, on), Just (Cell t style)) ->
-        if S.isEmpty t then (out, on)
-        else if style == on then (out ++ t, on)
-        else (out ++ (if S.isEmpty on then "" else A.reset) ++ style ++ t, style)
-    | (same, None) -> same in
-  match V.foldl step ("", "") (V.range from to) with
-  | (out, on) -> out ++ (if S.isEmpty on then "" else A.reset)
+  let step =
+    \acc i ->
+      match (acc, V.get row i) with
+      | ((out, on), Just (Cell t style)) ->
+          if S.isEmpty t then (out, on)
+          else if style == on then (out ++ t, on)
+          else (out ++ (if S.isEmpty on then "" else A.reset) ++ style ++ t, style)
+      | (same, None) -> same
+  in match V.foldl step ("", "") (V.range from to) with
+     | (out, on) -> out ++ (if S.isEmpty on then "" else A.reset)
 
 -- Each row as the text that shows it.
 @pub fun lines (b : Buffer) : [String] = V.map (\row -> rowShown row 0 (V.len row)) (rowsOf b)
@@ -352,20 +351,21 @@ fun rowShown (row : [Cell]) (from : Int) (to : Int) : String =
   if width old != width new or height old != height new then
     S.join "" (V.map (\i -> moveTo x (y + i) ++ V.getOr "" (lines new) i) (V.range 0 (height new)))
   else
-    S.join ""
+    S.join
+      ""
       (V.map
-        (\i ->
-          let a = V.getOr [] (rowsOf old) i in
-          let c = V.getOr [] (rowsOf new) i in
-          let differs = \j -> not (sameCell (V.get a j) (V.get c j)) in
-          let cols = V.filter differs (V.range 0 (V.len c)) in
-          match (V.get cols 0, V.last cols) with
-          -- A character two cells wide is written from its first.
-          | (Just from, Just to) ->
-              (let start = wideStart c from in
+         (\i ->
+           let a = V.getOr [] (rowsOf old) i in
+           let c = V.getOr [] (rowsOf new) i in
+           let differs = \j -> not (sameCell (V.get a j) (V.get c j)) in
+           let cols = V.filter differs (V.range 0 (V.len c)) in
+           match (V.get cols 0, V.last cols) with
+           -- A character two cells wide is written from its first.
+           | (Just from, Just to) ->
+               (let start = wideStart c from in
                 moveTo (x + start) (y + i) ++ rowShown c start (to + 1))
-          | _ -> "")
-        (V.range 0 (height new)))
+           | _ -> "")
+         (V.range 0 (height new)))
 
 fun sameCell (a : Maybe Cell) (b : Maybe Cell) : Bool =
   match (a, b) with
@@ -462,9 +462,9 @@ use Std.Test (assertEq)
       [(2, 4), (6, 3)]
       "shares, the first a row more"
   in assertEq
-    (V.map (\(r : Rect) -> r.w) (columns (rect 0 0 4 1) [Cells 3, Cells 3]))
-    [3, 1]
-    "and no more than there is"
+       (V.map (\(r : Rect) -> r.w) (columns (rect 0 0 4 1) [Cells 3, Cells 3]))
+       [3, 1]
+       "and no more than there is"
 
 @test fun aParagraphBreaksBetweenWords () =
   let a =
@@ -490,9 +490,9 @@ use Std.Test (assertEq)
       ["item 4  ", "item 5  ", "item 6  "]
       "the chosen one in the middle"
   in assertEq
-    (plain (list (blank 8 3) (rect 0 0 8 3) items 9 (bold style)))
-    ["item 7  ", "item 8  ", "item 9  "]
-    "and the end in sight"
+       (plain (list (blank 8 3) (rect 0 0 8 3) items 9 (bold style)))
+       ["item 7  ", "item 8  ", "item 9  "]
+       "and the end in sight"
 
 @test fun aStyleIsTurnedOnForItsRunAndOffAfter () =
   let b = write (write (blank 5 1) 0 0 style "ab") 2 0 (bold style) "cd" in
