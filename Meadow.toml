@@ -3,5 +3,5 @@ name = "Doodle"
 version = "0.1.1"
 
 [dependencies]
-Anstyle = { git = "https://github.com/mcdearman/MeadowAnstyle", version = "0.2.0" }
-UnicodeWidth = { git = "https://github.com/mcdearman/MeadowUnicodeWidth", version = "0.2.0" }
+Anstyle = { git = "https://github.com/meadow-lang/Bloom", version = "0.2.0" }
+UnicodeWidth = { git = "https://github.com/meadow-lang/UnicodeWidth", version = "0.2.0" }

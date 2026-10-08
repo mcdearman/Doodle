@@ -1,7 +1,7 @@
 # Doodle
 
 Drawing in a terminal, a cell at a time, for
-[Meadow](https://github.com/mcdearman/meadow).
+[Meadow](https://github.com/meadow-lang/meadow).
 
 A buffer is a grid of cells, each a character and how it is styled.
 Everything that draws takes a buffer and answers one, so what is drawn is a
@@ -35,15 +35,15 @@ writeOutput (below (picker ["length", "lines", "last"] 1))
 
 A character is as wide as a terminal shows it: one cell, two, or none for a
 mark that goes on the character before. Widths are
-[UnicodeWidth](https://github.com/mcdearman/MeadowUnicodeWidth)'s and styles
-are [Anstyle](https://github.com/mcdearman/MeadowAnstyle)'s; the ones a caller
+[UnicodeWidth](https://github.com/meadow-lang/UnicodeWidth)'s and styles
+are [Anstyle](https://github.com/meadow-lang/Bloom)'s; the ones a caller
 starts from -- `style`, `bold`, `dimmed`, `withFg`, the colours -- are handed
 on from here, so drawing needs only this package.
 
 ## Install
 
 ```sh
-meadow add mcdearman/Doodle
+meadow add meadow-lang/Doodle
 ```
 
 ## Licence
