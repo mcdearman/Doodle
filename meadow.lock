@@ -5,14 +5,14 @@ version = 1
 
 [[package]]
 name = "Anstyle"
-source = "git+https://github.com/mcdearman/MeadowAnstyle?version=0.2.0"
+source = "git+https://github.com/meadow-lang/Bloom?version=0.2.0"
 version = "0.2.1"
 rev = "66c067ee073ae777336c5bb8f8bc2eac71e14a59"
 tree = "344ca224a72f8d22632104c46f238d134138b8d9"
 
 [[package]]
 name = "UnicodeWidth"
-source = "git+https://github.com/mcdearman/MeadowUnicodeWidth?version=0.2.0"
+source = "git+https://github.com/meadow-lang/UnicodeWidth?version=0.2.0"
 version = "0.2.0"
 rev = "a4580b8010ecfba736c0f7d105a308db6972e60e"
 tree = "018d5c43b7b4c92e41fdcb4b91907ae7654bd335"
