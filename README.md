@@ -40,6 +40,14 @@ are [Anstyle](https://github.com/meadow-lang/Bloom)'s; the ones a caller
 starts from -- `style`, `bold`, `dimmed`, `withFg`, the colours -- are handed
 on from here, so drawing needs only this package.
 
+## AI disclosure
+
+Doodle is written with AI coding agents: Anthropic's Claude, through Claude
+Code. Most of the code, the tests, the documentation and the commit messages in
+this repository were written by an agent, under the direction of the project's
+author, who decides the design and what goes in. Read it, and rely on it, with
+that in mind.
+
 ## Install
 
 ```sh
